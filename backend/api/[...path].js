@@ -15,6 +15,10 @@ async function ensureDatabaseConnection() {
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    return app(req, res);
+  }
+
   await ensureDatabaseConnection();
   return app(req, res);
 }

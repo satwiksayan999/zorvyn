@@ -12,7 +12,31 @@ import { errorHandler } from './middleware/error.js';
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://zorvyn-ysva.vercel.app',
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL,
+]
+  .filter(Boolean)
+  .flatMap((origin) => origin.split(','))
+  .map((origin) => origin.trim().replace(/\/$/, ''));
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ''))) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(helmet());
