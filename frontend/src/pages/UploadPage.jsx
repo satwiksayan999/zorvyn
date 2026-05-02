@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import axios from 'axios';
 import api from '../services/api.js';
 
 export default function UploadPage() {
@@ -15,6 +16,7 @@ export default function UploadPage() {
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (!file) return;
+
     setVideoFile(file);
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
@@ -26,30 +28,50 @@ export default function UploadPage() {
     event.preventDefault();
     if (uploadInProgress.current) return;
 
-    if (!videoFile || !title) {
+    if (!videoFile || !title.trim()) {
       setMessage('Please provide a video file and title.');
       return;
     }
 
     uploadInProgress.current = true;
     setUploading(true);
-
-    const formData = new FormData();
-    formData.append('video', videoFile);
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('tags', tags);
+    setProgress(0);
 
     try {
-      setMessage('Uploading...');
-      await api.post('/videos', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (evt) => {
-          if (evt.total) {
-            setProgress(Math.round((evt.loaded * 100) / evt.total));
-          }
-        },
+      setMessage('Preparing upload...');
+      const signatureResponse = await api.get('/videos/signature');
+      const { apiKey, cloudName, folder, resourceType, timestamp, signature } = signatureResponse.data;
+
+      const cloudinaryFormData = new FormData();
+      cloudinaryFormData.append('file', videoFile);
+      cloudinaryFormData.append('api_key', apiKey);
+      cloudinaryFormData.append('timestamp', timestamp);
+      cloudinaryFormData.append('signature', signature);
+      cloudinaryFormData.append('folder', folder);
+
+      setMessage('Uploading video...');
+      const cloudinaryResponse = await axios.post(
+        `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
+        cloudinaryFormData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (evt) => {
+            if (evt.total) {
+              setProgress(Math.round((evt.loaded * 100) / evt.total));
+            }
+          },
+        }
+      );
+
+      setMessage('Saving video...');
+      await api.post('/videos/complete', {
+        title: title.trim(),
+        description,
+        tags,
+        publicId: cloudinaryResponse.data.public_id,
+        videoUrl: cloudinaryResponse.data.secure_url,
       });
+
       setMessage('Video uploaded successfully.');
       setProgress(0);
       setTitle('');
@@ -58,7 +80,7 @@ export default function UploadPage() {
       setVideoFile(null);
       setPreviewUrl('');
     } catch (error) {
-      setMessage('Upload failed. Please try again.');
+      setMessage(error.response?.data?.message || 'Upload failed. Please try again.');
     } finally {
       uploadInProgress.current = false;
       setUploading(false);
